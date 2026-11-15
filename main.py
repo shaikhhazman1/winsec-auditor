@@ -2,13 +2,17 @@
 """WinSec Auditor - Windows misconfiguration auditor and TCP port scanner."""
 import argparse
 import sys
+import time
 
-from core.safety import show_disclaimer, is_in_scope
+from core.safety import (
+    show_disclaimer, is_in_scope, register_kill_switch, stop_event,
+)
 
 DEFAULT_TARGET = "127.0.0.1"          # safe default: localhost only
 DEFAULT_SCOPE = "127.0.0.0/24"        # safe default: loopback range
 DEFAULT_PORTS = "21,22,80,135,139,443,445,3389"
 DEFAULT_OUTPUT = "./output/"
+EXIT_ABORTED = 130                    # standard exit code for Ctrl+C
 
 
 def parse_ports(value: str) -> list[int]:
@@ -67,6 +71,21 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def simulate_work(results: list, steps: int = 20) -> None:
+    """TEMPORARY: fake workload so we can test the kill switch.
+
+    Mimics what the real scanner/audit loops must do: check
+    stop_event every iteration and return early if it is set.
+    Removed in Step 6 when the real modules are connected.
+    """
+    for i in range(1, steps + 1):
+        if stop_event.is_set():
+            return  # abort cleanly, keep what we have so far
+        time.sleep(0.5)
+        results.append({"check": f"fake-task-{i}", "status": "DONE"})
+        print(f"    finished task {i}/{steps}")
+
+
 def main() -> None:
     args = build_parser().parse_args()
 
@@ -83,7 +102,21 @@ def main() -> None:
         sys.exit(1)
     print(f"[+] Scope OK: {message}")
 
-    print(args)  # temporary: removed in later steps
+    # 3. Arm the kill switch only now, so Ctrl+C at the earlier
+    #    prompts still behaves normally.
+    register_kill_switch()
+    print("[*] Kill switch active: press Ctrl+C to abort safely.")
+
+    # 4. Run the work (temporary stub for now).
+    results: list = []
+    simulate_work(results)
+
+    # 5. Report whether the run was complete or partial.
+    if stop_event.is_set():
+        print(f"[!] Run ABORTED. Partial results: {len(results)} item(s) kept.")
+        sys.exit(EXIT_ABORTED)
+
+    print(f"[+] Run complete. {len(results)} item(s) collected.")
 
 
 if __name__ == "__main__":

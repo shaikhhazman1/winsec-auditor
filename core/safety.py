@@ -4,7 +4,9 @@ Step 2: legal disclaimer and typed authorization.
 Step 3: scope validation.
 """
 import ipaddress
+import signal
 import socket
+import threading
 
 CONFIRMATION_PHRASE = "I AUTHORIZE"
 
@@ -103,3 +105,37 @@ def is_in_scope(target: str, scope: str) -> tuple[bool, str]:
             return False, f"{ip} (from '{target}') is outside the authorized scope '{scope}'"
 
     return True, f"'{target}' ({', '.join(target_ips)}) is within scope '{scope}'"
+# ---------------------------------------------------------------
+# Kill switch (Step 4)
+# ---------------------------------------------------------------
+# Shared stop flag. Scanner and audit loops must check
+# stop_event.is_set() regularly and return early when it is True.
+stop_event = threading.Event()
+
+
+def _handle_abort(signum, frame) -> None:
+    """Signal handler: first press stops safely, second press forces exit."""
+    if stop_event.is_set():
+        print("\n[!] Second abort signal received. Forcing exit.")
+        raise SystemExit(130)
+    print("\n[!] Abort requested. Stopping safely "
+          "(press Ctrl+C again to force quit)...")
+    stop_event.set()
+
+
+def register_kill_switch() -> None:
+    """Route Ctrl+C and termination signals to the abort handler.
+
+    SIGINT  = Ctrl+C (works on Windows and Linux)
+    SIGTERM = termination request (limited on Windows: it can only be
+              raised from inside the program, not sent from outside)
+    SIGBREAK = Ctrl+Break (Windows only, so we look it up safely)
+    """
+    for name in ("SIGINT", "SIGTERM", "SIGBREAK"):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue  # this signal does not exist on this OS
+        try:
+            signal.signal(sig, _handle_abort)
+        except (ValueError, OSError):
+            pass  # not allowed here (e.g. not the main thread); skip it
