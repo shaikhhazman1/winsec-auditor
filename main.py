@@ -1,12 +1,47 @@
 #!/usr/bin/env python3
 """WinSec Auditor - Windows misconfiguration auditor and TCP port scanner."""
 import argparse
+import platform
 import sys
 import time
 
 from core.safety import (
     show_disclaimer, is_in_scope, register_kill_switch, stop_event,
 )
+
+# ---------------------------------------------------------------
+# Teammate modules. If a module is not written yet, use a harmless
+# placeholder so main.py still runs. Each placeholder is recorded
+# in PLACEHOLDERS so the user is always told about it.
+# ---------------------------------------------------------------
+PLACEHOLDERS: list[str] = []
+
+try:
+    from modules.scanner import run_scan
+except ImportError:
+    PLACEHOLDERS.append("scanner")
+
+    def run_scan(target, ports, stop_event):
+        return []
+
+try:
+    from modules.audit import run_audit
+except ImportError:
+    PLACEHOLDERS.append("audit")
+
+    def run_audit(stop_event):
+        return []
+
+try:
+    from modules.report import correlate, write_reports
+except ImportError:
+    PLACEHOLDERS.append("report")
+
+    def correlate(scan_results, audit_results):
+        return []
+
+    def write_reports(results, output_dir):
+        return None
 
 DEFAULT_TARGET = "127.0.0.1"          # safe default: localhost only
 DEFAULT_SCOPE = "127.0.0.0/24"        # safe default: loopback range
@@ -71,11 +106,48 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def plan_modules(args) -> tuple[list[str], list[str]]:
+    """Decide which modules will run on this machine.
+
+    Returns (modules_to_run, notes). The Windows audit needs winreg,
+    netsh and PowerShell, so it is skipped on any other OS instead of
+    crashing.
+    """
+    modules: list[str] = []
+    notes: list[str] = []
+
+    if not args.audit_only:
+        modules.append("port scanner")
+
+    if not args.scan_only:
+        if platform.system() == "Windows":
+            modules.append("Windows audit")
+        else:
+            notes.append(
+                f"Windows audit skipped (running on {platform.system()}, not Windows)"
+            )
+
+    return modules, notes
+
+
+def print_plan(args, modules: list[str], notes: list[str]) -> None:
+    """Print what the tool is about to do (used by --dry-run)."""
+    print("\n[DRY RUN] Nothing will be scanned, audited or written.")
+    print(f"  Target  : {args.target}")
+    print(f"  Scope   : {args.scope}")
+    print(f"  Ports   : {', '.join(str(p) for p in args.ports)}")
+    print(f"  Output  : {args.output} (would be created on a real run)")
+    print(f"  Modules : {', '.join(modules) if modules else 'none'}")
+    if "Windows audit" in modules:
+        print("            (the audit is read-only and checks THIS machine only)")
+    for note in notes:
+        print(f"  Note    : {note}")
+    print()
+
+
 def simulate_work(results: list, steps: int = 20) -> None:
     """TEMPORARY: fake workload so we can test the kill switch.
 
-    Mimics what the real scanner/audit loops must do: check
-    stop_event every iteration and return early if it is set.
     Removed in Step 6 when the real modules are connected.
     """
     for i in range(1, steps + 1):
@@ -102,16 +174,32 @@ def main() -> None:
         sys.exit(1)
     print(f"[+] Scope OK: {message}")
 
-    # 3. Arm the kill switch only now, so Ctrl+C at the earlier
+    # 3. Work out what would run on this machine.
+    modules, notes = plan_modules(args)
+    if PLACEHOLDERS:
+        print(f"[!] Placeholder in use for: {', '.join(PLACEHOLDERS)} (module not found)")
+
+    # 4. Dry-run: show the plan and stop. No files are created.
+    if args.dry_run:
+        print_plan(args, modules, notes)
+        sys.exit(0)
+
+    for note in notes:
+        print(f"[!] {note}")
+    if not modules:
+        print("[!] Nothing to run on this system. Exiting.")
+        sys.exit(1)
+
+    # 5. Arm the kill switch only now, so Ctrl+C at the earlier
     #    prompts still behaves normally.
     register_kill_switch()
     print("[*] Kill switch active: press Ctrl+C to abort safely.")
 
-    # 4. Run the work (temporary stub for now).
+    # 6. Run the work (temporary stub until Step 6).
     results: list = []
     simulate_work(results)
 
-    # 5. Report whether the run was complete or partial.
+    # 7. Report whether the run was complete or partial.
     if stop_event.is_set():
         print(f"[!] Run ABORTED. Partial results: {len(results)} item(s) kept.")
         sys.exit(EXIT_ABORTED)
