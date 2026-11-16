@@ -26,9 +26,31 @@ def write_reports(results, output_dir="output"):
         os.makedirs(output_dir)
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    json_path = os.path.join(output_dir, f"report_{timestamp}.json")
     
+    # 1. JSON Output
+    json_path = os.path.join(output_dir, f"report_{timestamp}.json")
     with open(json_path, 'w') as f:
         json.dump(results, f, indent=4)
         
-    print(f"\n[+] Reports saved locally in folder: {output_dir}/")
+    # 2. Text Output
+    txt_path = os.path.join(output_dir, f"report_{timestamp}.txt")
+    with open(txt_path, 'w') as f:
+        f.write("WINSEC AUDITOR REPORT\n")
+        f.write("="*30 + "\n")
+        for item in results:
+            f.write(f"[{item.get('severity', 'INFO')}] {item.get('check')}\n")
+            f.write(f"Details: {item.get('details')}\n")
+            f.write(f"Remediation: {item.get('remediation')}\n\n")
+
+    # 3. HTML Output
+    html_path = os.path.join(output_dir, f"report_{timestamp}.html")
+    with open(html_path, 'w') as f:
+        f.write("<html><head><title>WinSec Auditor Report</title></head><body>")
+        f.write("<h1>WinSec Auditor - Compliance Report</h1>")
+        for item in results:
+            f.write(f"<h3 style='color:red;'>{item.get('check')} - {item.get('severity')}</h3>")
+            f.write(f"<p><b>Details:</b> {item.get('details')}</p>")
+            f.write(f"<p><b>Remediation:</b> {item.get('remediation')}</p><hr>")
+        f.write("</body></html>")
+
+    print(f"\n[+] Reports saved locally in folder: {output_dir}/ (JSON, TXT, HTML)")
