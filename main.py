@@ -2,6 +2,7 @@ import argparse
 from core.safety import get_authorization, enforce_scope, kill_switch_check
 from modules.report import correlate, write_reports
 from modules.scanner import PortScanner, parse_ports, format_table
+from modules.win_audit import WindowsConfigAuditor
 
 def main():
     parser = argparse.ArgumentParser(description="WinSec Auditor: Windows Compliance Scanner")
@@ -22,7 +23,10 @@ def main():
     except ValueError as exc:
         parser.error(str(exc))
     if args.dry_run:
-        print(f"[DRY-RUN] Would scan {len(ports)} TCP port(s) on {args.target}. Nothing sent.")
+        print(f"[DRY-RUN] Would scan {len(ports)} TCP port(s) on {args.target}. Running dry-run compliance check...")
+        auditor = WindowsConfigAuditor(dry_run=True)
+        auditor.run_all_checks()
+        auditor.print_summary()
         return
 
     print(f"[*] Scanning {len(ports)} port(s) on {args.target} (Ctrl+C to stop)...")
@@ -30,10 +34,13 @@ def main():
     print(format_table(scan_report))
     scan_results = [f.to_dict() for f in scan_report.to_findings()]
     
+    # 3. Windows Misconfiguration Audit (Member 3)
     print("[*] Auditing compliance...")
-    audit_results = [{"check": "SMBv1_enabled", "status": "enabled"}]
+    auditor = WindowsConfigAuditor(dry_run=args.dry_run)
+    audit_results = auditor.run_all_checks()
+    auditor.print_summary()
 
-    # 3. Proses Laporan
+    # 4. Proses Laporan
     print("[*] Correlating findings...")
     findings = correlate(scan_results, audit_results, args.target)
     
