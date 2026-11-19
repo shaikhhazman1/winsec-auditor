@@ -1,15 +1,25 @@
 import unittest
-from unittest.mock import patch
-from core.safety import kill_switch_check
+
+from core import safety
+
 
 class TestKillSwitch(unittest.TestCase):
-    @patch('builtins.input', return_value='')
-    def test_killswitch_proceed(self, mock_input):
-        # Simulate user tekan ENTER. Dia tak patut exit.
-        try:
-            kill_switch_check()
-        except SystemExit:
-            self.fail("Kill switch exited on ENTER press!")
+    def setUp(self):
+        safety.stop_event.clear()
 
-if __name__ == '__main__':
+    def tearDown(self):
+        safety.stop_event.clear()
+
+    def test_first_signal_sets_event(self):
+        safety._handle_abort(2, None)
+        self.assertTrue(safety.stop_event.is_set())
+
+    def test_second_signal_forces_exit(self):
+        safety._handle_abort(2, None)
+        with self.assertRaises(SystemExit) as ctx:
+            safety._handle_abort(2, None)
+        self.assertEqual(ctx.exception.code, 130)
+
+
+if __name__ == "__main__":
     unittest.main()
