@@ -63,6 +63,7 @@ def correlate(scan_results, audit_results, target):
 def write_reports(results, output_dir="output"):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
+        
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
